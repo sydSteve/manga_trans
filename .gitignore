@@ -19,7 +19,8 @@ EasyOCR/
 # 输入/输出图片（通常很大，且是个人数据）
 input_images/
 output_images/
-
+debug_previews/
+tmp/
 # 环境变量（包含 API Key，绝对不能上传）
 .env
 
