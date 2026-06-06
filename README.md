@@ -41,8 +41,8 @@ These steps assume you just downloaded or cloned the repository from GitHub.
 #### 1. Clone the repository
 
 ```powershell
-git clone <your-repo-url>
-cd <your-repo-folder>
+git clone https://github.com/sydSteve/manga_trans
+cd your folder
 ```
 
 #### 2. Create a virtual environment
@@ -272,8 +272,8 @@ test/         测试 / 镜像实验目录
 #### 1. 克隆仓库
 
 ```powershell
-git clone <your-repo-url>
-cd <your-repo-folder>
+git clone https://github.com/sydSteve/manga_trans
+cd 你下载的文件路径
 ```
 
 #### 2. 创建虚拟环境
