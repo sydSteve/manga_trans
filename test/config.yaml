@@ -1,0 +1,113 @@
+device: cuda
+
+detector:
+  model_path: ../third_party/comic-text-and-bubble-detector
+  repo_path: ""
+  min_confidence: 0.18
+  enable_easyocr_fusion: true
+  fusion_iou_threshold: 0.45
+  text_label_keywords:
+    - text
+    - dialogue
+    - caption
+    - narration
+    - speech
+  bubble_label_keywords:
+    - bubble
+    - balloon
+    - speech
+
+bubble:
+  enabled: true
+  backend: speech_bubble_segmentation
+  model_path: ../third_party/speech-bubble-segmentation/model.pt
+  min_confidence: 0.2
+  fallback: edges
+
+ocr:
+  model_path: ../third_party/manga-ocr-base
+  offline_only: true
+  retry_with_orientation: true
+  language:
+    - ja
+  min_text_length: 2
+  crop_padding: 6
+  prefill_enabled: true
+  prefill_min_length: 2
+  short_text_min_length: 2
+  prompt: "OCR:"
+  max_new_tokens: 256
+
+translator:
+  base_url: https://api.deepseek.com/v1/chat/completions
+  model: deepseek-chat
+  target_lang: zh
+  batch_size: 8
+  timeout_seconds: 45
+  max_retries: 3
+  temperature: 0.2
+  enabled: true
+
+inpaint:
+  backend: lama_cleaner
+  bubble_inner_shrink: 4
+  model_dir: ../third_party/torch
+  bubble_model: lama
+  outside_text_model: ldm
+  device: cuda
+  fallback_backend: translucent_white_overlay
+  hd_strategy: Crop
+  hd_strategy_crop_margin: 32
+  hd_strategy_crop_trigger_size: 512
+  hd_strategy_resize_limit: 512
+  ldm_steps: 20
+  ldm_sampler: plms
+  failure_fill_mode: bubble_white_overlay
+
+style:
+  model_path: ../third_party/yuzumarker-font-detection/yuzumarker-font-detection.safetensors
+  labels_path: ../third_party/yuzumarker-font-detection/font-labels.json
+  labels_ex_path: ../third_party/yuzumarker-font-detection/font-labels-ex.json
+  top_k: 5
+  min_confidence: 0.2
+  font_family_map:
+    sans/gothic:
+      - C:/Windows/Fonts/msyh.ttc
+      - C:/Windows/Fonts/msgothic.ttc
+      - /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc
+    serif/mincho:
+      - C:/Windows/Fonts/simsun.ttc
+      - C:/Windows/Fonts/msmincho.ttc
+      - /usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc
+      - /usr/share/fonts/truetype/noto/NotoSerifCJK-Regular.ttc
+    handwritten_or_display:
+      - C:/Windows/Fonts/simkai.ttf
+      - C:/Windows/Fonts/msyh.ttc
+      - /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc
+  default_text_color: [0, 0, 0]
+  default_stroke_color: [255, 255, 255]
+  default_stroke_width: 2
+
+render:
+  vertical_priority: true
+  max_fill_ratio: 0.84
+  dialogue_max_fill_ratio: 0.82
+  narration_max_fill_ratio: 0.88
+  min_font_size: 10
+  max_font_size: 56
+  small_box_stroke_scale: 0.75
+  font_paths:
+    - C:/Windows/Fonts/msyh.ttc
+    - C:/Windows/Fonts/msgothic.ttc
+    - /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc
+  text_color: [0, 0, 0]
+  stroke_color: [255, 255, 255]
+  stroke_width: 2
+  font_size_offset: 0
+  line_spacing: 3
+  column_spacing: 5
+  margin: 4
+
+debug:
+  enabled: true
+  output_dirname: _debug

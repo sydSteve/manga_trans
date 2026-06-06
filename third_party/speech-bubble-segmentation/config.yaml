@@ -1,0 +1,9 @@
+# TRAINING EXAMPLE : yolo segment train data=config.yaml model=yolov8m-seg.yaml pretrained=yolov8m-seg.pt epochs=100 imgsz=640 batch=-1 workers=4 save_period=10
+path: # dataset root dir
+train: images # train images (relative to 'path')
+val: val # val images (relative to 'path')
+
+nc: 1  # number of classes
+# Classes
+names:
+    0: speech bubble

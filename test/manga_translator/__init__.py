@@ -1,0 +1,2 @@
+"""Modular manga translation pipeline."""
+
