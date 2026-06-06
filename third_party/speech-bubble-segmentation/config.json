@@ -1,0 +1,18 @@
+{
+  "model_type": "yolov8-seg",
+  "variant": "m",
+  "input_size": 640,
+  "num_classes": 1,
+  "num_masks": 32,
+  "num_prototypes": 192,
+  "reg_max": 16,
+  "class_names": [
+    "speech bubble"
+  ],
+  "default_confidence_threshold": 0.25,
+  "default_nms_threshold": 0.45,
+  "mask_threshold": 0.5,
+  "letterbox_color": 114,
+  "source_repo": "kitsumed/yolov8m_seg-speech-bubble",
+  "source_model_filename": "model.pt"
+}

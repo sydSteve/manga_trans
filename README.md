@@ -1,78 +1,465 @@
-# manga_trans
-这段代码已经具备了一个完整漫画汉化的基础流水线，但在鲁棒性、翻译质量、嵌字美观和工程化上仍有不少可改进之处。以下是一些主要缺点：
+# Manga Translator Pipeline
 
----
+[English](#english) | [中文](#chinese)
 
-### 1. **文字区域检测方式单一，容易漏检/误检**
-- 目前完全依赖 EasyOCR 的文字检测，但 EasyOCR 对漫画中**竖向排列**的文字、**非矩形/透视**的文字、**与背景对比度低**的文字检出率并不稳定。
-- 预留的 `detect_bubbles_by_edges` 气泡检测函数并未真正接入主流程。实际漫画中，**先定位气泡再在气泡内做检测**是更可靠的方案，可以减少背景特效字的干扰。
-- 框合并时只考虑了水平相邻合并，对于竖排文字（尤其在窄高气泡中）合并逻辑可能不够有效。
+<a id="english"></a>
+## English
 
----
+Local manga page translation pipeline for Japanese comics. The current repository provides:
 
-### 2. **擦除原文的方式过于粗糙**
-- 当前擦除原文是用一个**半透明白色多边形**直接覆盖，这在纯色或简单背景的气泡中勉强可用，但遇到：
-  - 气泡有渐变、纹理、网格线  
-  - 气泡边缘有描边  
-  - 文字压在有图案的背景上  
-  这种“涂白”会留下明显的**色块痕迹**，破坏画面。
-- 缺少真正的 **inpainting**（如使用 LaMa 或 简单修补算法）来智能填充背景。
+- Text region detection
+- Speech bubble detection
+- Japanese OCR
+- Optional DeepSeek translation
+- Source-region cleanup
+- Chinese text rendering
 
----
+This repository is currently organized around a Windows + PowerShell + NVIDIA CUDA 12.4 workflow, with the main pipeline living under `app/`.
 
-### 3. **嵌字排版仍有缺陷**
-- **字符不等宽问题**：竖排绘制假定所有字符宽度等于“测”字的宽度，但实际中文标点（，。、）、英文、数字宽度并不一致，会导致排版参差不齐。
-- **标点悬挂缺失**：中文竖排时，逗号、句号等通常应该挂在右上角，代码中并没有做禁则处理（如不允许标点出现在行首）。
-- **字体回退不完善**：缺少日文汉字/假名所需字体时，可能直接使用默认字体，导致风格突兀。也无法指定粗体、倾斜等变体。
-- **强制换列只靠 `\n`**：无法智能在词边界断句，可能出现一个词被拆到两列的情况。
-- **字号二分搜索范围**：最大字号尝试 `max_font_size * 2`，没有上限（可能达到 120+），会导致不必要的循环，且超大字号文字实际效果不佳。
+### Repository Layout
 
----
+```text
+app/          Main pipeline code, config, and CLI entry
+third_party/  Third-party models (not committed to GitHub by default)
+data/         Input and output image directories
+test/         Test / mirrored experiment directory
+```
 
-### 4. **文本框过滤器阈值硬编码，适应性差**
-- 背景亮度阈值 `bright_threshold=120`、边缘密度阈值 `0.2`、面积/宽高比范围等是固定值，不同漫画风格（如暗黑系、线稿多的作品）可能大量误杀正确文字。
-- 背景亮度的采样仅取四角小块，如果气泡内部本身有阴影或渐变色，可能误判。
-- 这些参数应该可配置，或根据不同漫画自动调整。
+### Recommended Environment
 
----
+- Windows 10/11
+- Python 3.11
+- NVIDIA GPU
+- PyTorch 2.6.0 with CUDA 12.4
 
-### 5. **翻译模块容错和灵活性不足**
-- API 调用失败时直接回退原文，但失败原因未详细记录（只打印一句），难以排查。
-- 无重试机制，网络抖动就会导致部分框保留日文。
-- 系统提示词中的 `遇到不明所以的文字输出‘跳过’` 过于简单，模型可能仍强行翻译成乱码，而“跳过”这个词又可能被直接嵌入图片。
-- 没有支持批量翻译请求合并，逐框翻译效率低且消耗 token 多。
+CPU-only execution is possible, but it will be much slower.
 
----
+### Installation
 
-### 6. **性能与资源管理**
-- 每张图片都重新进行 OCR 区域检测和识别，但实际上同一漫画的字体风格一致，MangaOcr 模型已经常驻内存，这一部分开销可接受；但 **EasyOCR 检测模型也在每张图片都重新读取？**（代码中是初始化后复用，但 reader 是全局的，这部分尚可）
-- **没有 GPU 自动检测**：线程数限制和 `torch.set_num_threads` 在无 GPU 时有用，但若用户有 GPU 且想利用，当前设置可能反而限制性能。
-- 所有图片线性处理，未利用多线程/多进程，批量处理几十张图会很慢。
+These steps assume you just downloaded or cloned the repository from GitHub.
 
----
+#### 1. Clone the repository
 
-### 7. **工程化与用户体验**
-- 输入输出目录硬编码，无法通过命令行参数传递，每次修改必须改代码。
-- 仅支持脚本直接运行，没有提供简单的 GUI 或拖拽界面，非技术人员难使用。
-- 进度展示简陋，只打印当前文件，没有进度条或剩余时间估计。
-- 没有日志系统，异常只简单的 `print(e)`，无法追溯历史错误。
-- 密钥通过 `.env` 明文存储，虽然基础可用，但容易被提交到版本控制，缺乏安全提醒。
+```powershell
+git clone <your-repo-url>
+cd <your-repo-folder>
+```
 
----
+#### 2. Create a virtual environment
 
-### 8. **一些细节瑕疵**
-- 图像 EXIF 方向未处理，如果照片有旋转信息，读取出的图片可能是倒置的，后续所有处理全错。
-- 中文翻译后未进行文本长度检查，极长的翻译可能把小气泡撑爆，导致嵌字失败或重叠。
-- `draw_text_vertical` 在计算总列宽时，没有考虑当所有字符都放不进一列（如字太高超出 `box_height`）的情况，此时 `max_chars_per_col` 可能为 0 导致除零错误（已有 `max(1, ...)` 但逻辑上仍可能出错）。
+```powershell
+py -3.11 -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+```
 
----
+#### 3. Install PyTorch
 
-### 改进方向建议
-- **替换或增强擦除模块**：引入 OpenCV 的 `inpaint` 或集成深度学习 inpainting 模型。
-- **重新设计文字检测流水线**：先检测气泡（边缘/颜色），再在气泡内做 OCR，并利用气泡形状指导竖排/横排。
-- **优化竖排引擎**：使用成熟的排版库（如 Pango、Pillow 的 `text` 方法 + 旋转），或至少正确处理标点悬挂、全角/半角字符宽度。
-- **参数外部化**：将所有阈值、API 地址、字体路径写入配置文件，或支持命令行参数。
-- **增加异步和并行**：翻译可批量调用，图片处理可用多进程/多线程加速。
-- **添加图形界面**：简单的 Web 界面或 PyQt 窗口，提高可用性。
+This project is currently aligned with:
 
-这些缺点并非否定代码价值，它已经很好地搭建了原型。针对真实漫画汉化的大规模使用，上面这些点会是影响效率和成品质量的关键瓶颈。
+- `torch 2.6.0`
+- `torchvision 0.21.0`
+- `torchaudio 2.6.0`
+
+For CUDA 12.4:
+
+```powershell
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+```
+
+For CPU only:
+
+```powershell
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+```
+
+#### 4. Install the remaining dependencies
+
+```powershell
+pip install -r requirements.txt
+```
+
+#### 5. Prepare runtime directories
+
+```powershell
+New-Item -ItemType Directory -Force data\input_images | Out-Null
+New-Item -ItemType Directory -Force data\output_images | Out-Null
+New-Item -ItemType Directory -Force debug | Out-Null
+New-Item -ItemType Directory -Force third_party | Out-Null
+```
+
+#### 6. Download models
+
+Large model files are not committed to GitHub by default. You need to place them under `third_party/`.
+
+##### 6.1 Required model
+
+At minimum, the OCR stage requires `manga-ocr-base`:
+
+```powershell
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='kha-white/manga-ocr-base', local_dir='third_party/manga-ocr-base')"
+```
+
+Expected files:
+
+```text
+third_party/manga-ocr-base/
+  config.json
+  preprocessor_config.json
+  pytorch_model.bin
+  special_tokens_map.json
+  tokenizer_config.json
+  vocab.txt
+```
+
+##### 6.2 Recommended models
+
+These are strongly recommended for good results.
+
+Text detection:
+
+```powershell
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='ogkalu/comic-text-and-bubble-detector', local_dir='third_party/comic-text-and-bubble-detector')"
+```
+
+Speech bubble detection:
+
+```powershell
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='mayocream/speech-bubble-segmentation', local_dir='third_party/speech-bubble-segmentation')"
+```
+
+##### 6.3 Optional model
+
+Font-style recognition is optional. If it is missing, the pipeline falls back to heuristic style analysis.
+
+Expected directory:
+
+```text
+third_party/yuzumarker-font-detection/
+  yuzumarker-font-detection.safetensors
+  font-labels.json
+  font-labels-ex.json
+```
+
+#### 7. Configure environment variables
+
+Copy the example file:
+
+```powershell
+Copy-Item app\.env.example app\.env
+```
+
+By default:
+
+- `USE_DEEPSEEK_API=false`
+- The pipeline can still run without a DeepSeek API key
+- Translation will fall back to direct OCR text output
+
+To enable real translation, edit `app/.env`:
+
+```env
+USE_DEEPSEEK_API=true
+DEEPSEEK_API_KEY=your_api_key
+MANGA_TRANSLATOR_DEVICE=cuda
+```
+
+### Run the Project
+
+Put input images into:
+
+```text
+data/input_images/
+```
+
+Then run:
+
+```powershell
+cd app
+python trans.py --debug
+```
+
+Or use the batch entry:
+
+```powershell
+cd app
+.\trans.cmd
+```
+
+Default paths:
+
+- Input: `data/input_images`
+- Output: `data/output_images`
+- Debug JSON: `data/output_images/_debug`
+
+### Minimum Runnable Setup
+
+If you only want to confirm that the project can run end to end, the minimum suggested setup is:
+
+- Install Python dependencies
+- Install PyTorch
+- Download `third_party/manga-ocr-base`
+- Keep `USE_DEEPSEEK_API=false`
+
+In that mode:
+
+- Text detection may fall back to EasyOCR
+- Bubble detection may fall back to edge bubbles
+- Translation may degrade to direct OCR text output
+- Style analysis may fall back to heuristic logic
+
+### FAQ
+
+#### `torch.cuda.is_available()` returns `false`
+
+Your PyTorch build likely does not match your CUDA environment, or the GPU driver is not set up correctly. Recheck step 3 first.
+
+#### I cloned the repo but there are no model files
+
+That is expected. The repository contains code and lightweight config only. Large models must be downloaded into `third_party/`.
+
+#### Can I run it without a DeepSeek API key?
+
+Yes. The project still runs, but translation will fall back to OCR text output.
+
+#### Can I run it on Linux or macOS?
+
+In principle yes, but `app/config.yaml` currently assumes Windows-oriented font paths. You will likely need to adjust font configuration.
+
+### Main Pipeline References
+
+- [app/PIPELINE_FLOW.md](app/PIPELINE_FLOW.md)
+- [app/trans.py](app/trans.py)
+- [app/manga_translator/cli.py](app/manga_translator/cli.py)
+
+[Back to top](#manga-translator-pipeline)
+
+<a id="chinese"></a>
+## 中文
+
+这是一个面向日文漫画页面的本地翻译流水线。当前仓库主要提供：
+
+- 文本区域检测
+- 气泡检测
+- 日文 OCR
+- 可选的 DeepSeek 翻译
+- 原文区域修复
+- 中文嵌字输出
+
+当前仓库默认按 `Windows + PowerShell + NVIDIA CUDA 12.4` 环境整理，主流程位于 `app/` 目录。
+
+### 仓库结构
+
+```text
+app/          主流程代码、配置、CLI 入口
+third_party/  第三方模型目录（默认不提交到 GitHub）
+data/         输入输出图片目录
+test/         测试 / 镜像实验目录
+```
+
+### 推荐环境
+
+- Windows 10/11
+- Python 3.11
+- NVIDIA GPU
+- 对应 CUDA 12.4 的 PyTorch 2.6.0
+
+也可以使用 CPU 跑通，但速度会明显更慢。
+
+### 安装步骤
+
+以下步骤从“刚从 GitHub 下载仓库代码”开始。
+
+#### 1. 克隆仓库
+
+```powershell
+git clone <your-repo-url>
+cd <your-repo-folder>
+```
+
+#### 2. 创建虚拟环境
+
+```powershell
+py -3.11 -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+```
+
+#### 3. 安装 PyTorch
+
+当前项目对应的版本是：
+
+- `torch 2.6.0`
+- `torchvision 0.21.0`
+- `torchaudio 2.6.0`
+
+如果使用 CUDA 12.4：
+
+```powershell
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+```
+
+如果只使用 CPU：
+
+```powershell
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+```
+
+#### 4. 安装其余依赖
+
+```powershell
+pip install -r requirements.txt
+```
+
+#### 5. 准备运行目录
+
+```powershell
+New-Item -ItemType Directory -Force data\input_images | Out-Null
+New-Item -ItemType Directory -Force data\output_images | Out-Null
+New-Item -ItemType Directory -Force debug | Out-Null
+New-Item -ItemType Directory -Force third_party | Out-Null
+```
+
+#### 6. 下载模型
+
+由于 GitHub 不适合直接托管大模型文件，`third_party/` 下的模型需要手动下载。
+
+##### 6.1 必需模型
+
+最少需要安装 `manga-ocr-base` 才能完成 OCR：
+
+```powershell
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='kha-white/manga-ocr-base', local_dir='third_party/manga-ocr-base')"
+```
+
+目录中至少应包含：
+
+```text
+third_party/manga-ocr-base/
+  config.json
+  preprocessor_config.json
+  pytorch_model.bin
+  special_tokens_map.json
+  tokenizer_config.json
+  vocab.txt
+```
+
+##### 6.2 推荐模型
+
+以下模型强烈建议安装，否则效果会退化到回退逻辑。
+
+文本检测模型：
+
+```powershell
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='ogkalu/comic-text-and-bubble-detector', local_dir='third_party/comic-text-and-bubble-detector')"
+```
+
+气泡检测模型：
+
+```powershell
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='mayocream/speech-bubble-segmentation', local_dir='third_party/speech-bubble-segmentation')"
+```
+
+##### 6.3 可选模型
+
+字体风格识别模型是可选项。如果缺失，流程会回退到启发式样式分析，不会阻塞主流程。
+
+期望目录如下：
+
+```text
+third_party/yuzumarker-font-detection/
+  yuzumarker-font-detection.safetensors
+  font-labels.json
+  font-labels-ex.json
+```
+
+#### 7. 配置环境变量
+
+复制示例文件：
+
+```powershell
+Copy-Item app\.env.example app\.env
+```
+
+默认情况下：
+
+- `USE_DEEPSEEK_API=false`
+- 没有 DeepSeek API Key 也可以运行
+- 翻译阶段会退化为直接输出 OCR 文本
+
+如果要启用真实翻译，请编辑 `app/.env`：
+
+```env
+USE_DEEPSEEK_API=true
+DEEPSEEK_API_KEY=your_api_key
+MANGA_TRANSLATOR_DEVICE=cuda
+```
+
+### 运行项目
+
+把输入图片放到：
+
+```text
+data/input_images/
+```
+
+然后执行：
+
+```powershell
+cd app
+python trans.py --debug
+```
+
+也可以使用批处理入口：
+
+```powershell
+cd app
+.\trans.cmd
+```
+
+默认路径：
+
+- 输入：`data/input_images`
+- 输出：`data/output_images`
+- 调试 JSON：`data/output_images/_debug`
+
+### 最低可运行配置
+
+如果你只想先验证项目能不能跑通，最低建议是：
+
+- 安装 Python 依赖
+- 安装 PyTorch
+- 下载 `third_party/manga-ocr-base`
+- 保持 `USE_DEEPSEEK_API=false`
+
+在这种模式下：
+
+- 文本检测可能回退到 EasyOCR
+- 气泡检测可能回退到 edge bubbles
+- 翻译可能退化为 OCR 文本直出
+- 风格分析可能退化为启发式逻辑
+
+### 常见问题
+
+#### `torch.cuda.is_available()` 返回 `false`
+
+通常说明 PyTorch 与你的 CUDA 环境不匹配，或者显卡驱动没有正确配置。优先重新检查第 3 步。
+
+#### 克隆仓库后没有模型文件
+
+这是正常的。仓库默认只放代码和轻量配置，大模型需要单独下载到 `third_party/`。
+
+#### 没有 DeepSeek API Key 能不能运行
+
+可以。只是翻译会退化为 OCR 文本输出。
+
+#### Linux / macOS 能不能跑
+
+原则上可以，但 `app/config.yaml` 当前默认字体路径偏向 Windows，Linux / macOS 上通常需要自行调整字体配置。
+
+### 主流程参考
+
+- [app/PIPELINE_FLOW.md](app/PIPELINE_FLOW.md)
+- [app/trans.py](app/trans.py)
+- [app/manga_translator/cli.py](app/manga_translator/cli.py)
+
+[返回顶部](#manga-translator-pipeline)

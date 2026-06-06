@@ -1,39 +1,49 @@
-# Python 虚拟环境
+# Python environments
 venv/
 .venv/
 
-# Python 缓存文件
+# Python cache and tooling
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
 
-# 模型权重 & 缓存（本地和系统缓存）
-huggingface/
-EasyOCR/
-*.pt
-*.pth
-*.bin
-*.safetensors
-*.ckpt
-
-# 输入/输出图片（通常很大，且是个人数据）
-input_images/
-output_images/
-debug_previews/
-tmp/
-# 环境变量（包含 API Key，绝对不能上传）
+# Secrets and local config
 .env
 
-# IDE 配置
+# Runtime data
+data/input_images/
+data/output_images/
+debug/
+Ultralytics/
+test/input_images/
+test/output_images/
+test/test_out/
+
+# Third-party model caches and large binaries
+third_party/**/.cache/
+third_party/torch/
+third_party/**/*.onnx
+third_party/**/*.pt
+third_party/**/*.pth
+third_party/**/*.bin
+third_party/**/*.ckpt
+third_party/**/*.safetensors
+
+# IDE config
 .vscode/
 .idea/
 
-# 系统杂项
+# System files and logs
 .DS_Store
 Thumbs.db
 *.log
 
-# 打包文件
+# Archives
 *.zip
 *.rar
 *.7z
